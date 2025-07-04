@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>スレッド</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
+    .comment { border: 1px solid #ccc; background: #fff; padding: 10px; margin: 10px 0; }
+    img.comment-img { max-width: 200px; display: block; margin-top: 5px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1 id="thread-title">スレッド</h1>
+  <div id="comments"></div>
+
+  <h2>コメントを投稿</h2>
+  <form id="comment-form">
+    <input type="text" id="name" placeholder="名前（省略可）" /><br />
+    <textarea id="body" placeholder="本文" required></textarea><br />
+    <input type="file" id="image" accept="image/*" /><br />
+    
+    <button type="submit">投稿</button>
+  </form>
+
+  <audio id="se" src="se.mp3" preload="auto"></audio>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+    const supabase = createClient(
+      "https://vpvvdkbkghyfiflkidno.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwdnZka2JrZ2h5ZmlmbGtpZG5vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE1ODExNTcsImV4cCI6MjA2NzE1NzE1N30.bGHEpq0Z9XCSY8SJE7-aGQpLA4axBDH4J4hCxyakbLg"
+    );
+
+    const url = new URL(location.href);
+    const threadId = url.searchParams.get("id");
+
+    async function loadThread() {
+      const { data, error } = await supabase
+        .from("threads")
+        .select("*")
+        .eq("id", threadId)
+        .single();
+      if (data) {
+        document.getElementById("thread-title").textContent = data.title;
+      }
+    }
+
+    async function loadComments() {
+      const { data, error } = await supabase
+        .from("comments")
+        .select("*")
+        .eq("thread_id", threadId)
+        .order("created_at", { ascending: true });
+
+      const container = document.getElementById("comments");
+      container.innerHTML = "";
+
+      data.forEach((cmt, idx) => {
+        const div = document.createElement("div");
+        div.className = "comment";
+        div.innerHTML = `<b>${cmt.name || "名無しさん"}：#${idx + 1}</b><br>${cmt.body}`;
+
+        if (cmt.image_url) {
+          const img = document.createElement("img");
+          img.src = cmt.image_url;
+          img.className = "comment-img";
+          img.onclick = () => window.open(cmt.image_url, "_blank");
+          div.appendChild(img);
+        }
+
+        if (localStorage.getItem("isAdmin") === "true") {
+          const delBtn = document.createElement("button");
+          delBtn.textContent = "削除";
+          delBtn.onclick = async () => {
+            if (confirm("このコメントを削除しますか？")) {
+              await supabase.from("comments").delete().eq("id", cmt.id);
+              alert("削除しました");
+              loadComments();
+            }
+          };
+          div.appendChild(delBtn);
+        }
+
+        container.appendChild(div);
+      });
+    }
+
+    document.getElementById("comment-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = document.getElementById("name").value;
+      const body = document.getElementById("body").value;
+      const  = document.getElementById("").value;
+      const imageFile = document.getElementById("image").files[0];
+
+      let imageUrl = null;
+      if (imageFile) {
+        if (imageFile.size > 2 * 1024 * 1024) {
+          alert("画像は2MB以内にしてください。");
+          return;
+        }
+        const ext = imageFile.name.split(".").pop();
+        const fileName = `${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from("post-images")
+          .upload(fileName, imageFile);
+        if (uploadErr) {
+          alert("画像のアップロードに失敗しました");
+          return;
+        }
+        const { data: publicUrlData } = supabase.storage
+          .from("post-images")
+          .getPublicUrl(fileName);
+        imageUrl = publicUrlData.publicUrl;
+      }
+
+      const { error } = await supabase.from("comments").insert({
+        thread_id: threadId,
+        body,
+        name,
+        
+        image_url: imageUrl,
+      });
+
+      if (error) {
+        alert("投稿に失敗しました");
+        return;
+      }
+
+      document.getElementById("se").play();
+      document.getElementById("comment-form").reset();
+      loadComments();
+      window.scrollTo(0, document.body.scrollHeight);
+    });
+
+    loadThread();
+    loadComments();
+  </script>
+</body>
+</html>
